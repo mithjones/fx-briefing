@@ -1,3 +1,8 @@
+// Netlify function timeout configuration
+exports.config = {
+  timeout: 120
+};
+
 exports.handler = async function(event, context) {
   context.callbackWaitsForEmptyEventLoop = false;
 
