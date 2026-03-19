@@ -838,15 +838,26 @@ Return only valid JSON.`, 2500, true);
       usingJBlanked = false;
 
     } else {
-      // Netlify: JBlanked for calendar + Claude for prices (with search), in parallel
-      jbCal = await fetchCalendar(todayUTC, tomorrowUTC).catch(e => { console.warn('JBlanked failed:', e); return null; });
+      // Netlify: JBlanked for calendar (fast API), Claude for prices/macro (NO web search)
+      // Running both in parallel for speed
+      const jbCalPromise = fetchCalendar(todayUTC, tomorrowUTC).catch(e => { console.warn('JBlanked failed:', e); return null; });
+
+      const pricePromise = callClaude(`Today is ${melbNow} Melbourne time.
+
+Provide your best estimate of current approximate spot prices for these forex pairs: ${pairs.map(p=>`${p.base}/${p.quote}`).join(', ')}
+Also provide a 2-sentence macro summary of the current key themes driving forex markets today.
+
+Return ONLY valid JSON:
+{
+  "prices": {"AUD/USD":"0.6312","GBP/USD":"1.2945","AUD/JPY":"96.20","EUR/JPY":"161.50","NZD/JPY":"88.10","USD/CHF":"0.8840","EUR/CAD":"1.5610","NZD/CAD":"0.8100"},
+  "macroContext": "...",
+  "calendar": []
+}
+Return only valid JSON.`, 1500, false);
+
+      [jbCal, claudeRaw] = await Promise.all([jbCalPromise, pricePromise]);
       const hasJBCal = jbCal && jbCal.length > 0;
-      claudeRaw = await callClaude(`Melbourne time: ${melbNow}. UTC date: ${todayUTC}.
-Get the current spot price for each pair: ${pairs.map(p=>`${p.base}/${p.quote}`).join(', ')}
-Also provide a 2-sentence macro summary.
-Return ONLY valid JSON: {"prices":{"AUD/USD":"0.6312"},"macroContext":"...","calendar":[]}
-Return only valid JSON.`, 1500, true);
-      calEvents = hasJBCal ? jbCal : (parseJSON(claudeRaw, 'call1').calendar || []);
+      calEvents = hasJBCal ? jbCal : [];
       usingJBlanked = hasJBCal;
     }
 
