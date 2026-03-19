@@ -909,7 +909,7 @@ All values between -1.00 and 1.00. Return only valid JSON.`, 2000, true);
       }
     }
 
-    // ── STEP 3: Analysis via Claude (no search) ───────────────────────
+    // ── STEP 3: Analysis via Claude — split into two parallel calls ────
     stepActive(3);
     statusText.textContent = 'Generating analysis…';
     const t3 = Date.now();
@@ -919,45 +919,46 @@ All values between -1.00 and 1.00. Return only valid JSON.`, 2000, true);
       ? calEvents.map(e=>`${e.time} ${e.currency} - ${e.event}${e.forecast?' (forecast: '+e.forecast+')':''}`).join('; ')
       : 'No high-impact events found in the next 24h';
 
-    const raw3 = await callClaude(`You are a professional forex analyst. Use ONLY the data below — do NOT search.
-
+    const systemPrompt = `You are a professional forex analyst. Use ONLY the data below — do NOT search.
 MELBOURNE TIME: ${melbNow}
 MACRO: ${claudeData.macroContext||''}
 CURRENT PRICES: ${pricesStr}
-HIGH-IMPACT EVENTS NEXT 24H (UTC): ${calStr}
+HIGH-IMPACT EVENTS NEXT 24H (UTC): ${calStr}`;
 
-TRADER POSITIONS:
-${pairsText}
+    const pairsArr = pairs;
+    const half = Math.ceil(pairsArr.length / 2);
+    const batch1 = pairsArr.slice(0, half);
+    const batch2 = pairsArr.slice(half);
 
-For EACH pair provide:
-- 2-3 sentence fundamental analysis referencing specific events and current macro context
-- Which events are relevant (as pill labels)
-- Alignment: STRONG / ALIGNED / CAUTION / RISK
-- One-line rationale
-- 4H key levels based on the current price:
-  - 2-3 demand/support zones BELOW current price
-  - 2-3 supply/resistance zones ABOVE current price
-  - Each: price, label, strength ("strong"/"moderate"/"minor")
-  - One watch note
+    function makeAnalysisPrompt(batchPairs, macroIncluded) {
+      const batchText = batchPairs.map(p => `- ${p.base}/${p.quote}: ${p.dir} (${p.type})`).join('\n');
+      return `${systemPrompt}
+
+Analyse ONLY these pairs:
+${batchText}
+
+For EACH pair: 2-3 sentence analysis, relevant events, alignment (STRONG/ALIGNED/CAUTION/RISK), rationale, 4H key levels (2-3 demand below price, 2-3 supply above price, each with price/label/strength), watch note.
+${macroIncluded ? 'Also include macroSummary (2 sentences).' : 'Set macroSummary to "".'}
 
 Return ONLY valid JSON:
-{
-  "macroSummary":"...",
-  "analyses":[{
-    "pair":"AUD/USD","direction":"Short","type":"With Trend",
-    "alignment":"CAUTION","alignmentRationale":"...",
-    "analysis":"...",
-    "events":[{"label":"FOMC Decision","impact":"high"}],
-    "keyLevels":{
-      "demand":[{"price":"0.6280","label":"Prior swing low","strength":"strong"}],
-      "supply":[{"price":"0.6340","label":"4H retest","strength":"strong"}],
-      "levelsNote":"..."
+{"macroSummary":"...","analyses":[{"pair":"AUD/USD","direction":"Short","type":"With Trend","alignment":"CAUTION","alignmentRationale":"...","analysis":"...","events":[{"label":"FOMC","impact":"high"}],"keyLevels":{"demand":[{"price":"0.6280","label":"Prior low","strength":"strong"}],"supply":[{"price":"0.6340","label":"Retest","strength":"strong"}],"levelsNote":"..."}}]}
+strength must be "strong","moderate","minor". Return only valid JSON.`;
     }
-  }]
-}
-strength must be "strong","moderate","minor". Return only valid JSON.`, 6000, false);
 
-    const analysis = parseJSON(raw3, 'call3');
+    // Run both batches in parallel
+    const [raw3a, raw3b] = await Promise.all([
+      callClaude(makeAnalysisPrompt(batch1, true), 2200, false),
+      batch2.length > 0 ? callClaude(makeAnalysisPrompt(batch2, false), 2200, false) : Promise.resolve('{"macroSummary":"","analyses":[]}')
+    ]);
+
+    const res3a = parseJSON(raw3a, 'call3a');
+    const res3b = parseJSON(raw3b, 'call3b');
+
+    // Merge results
+    const analysis = {
+      macroSummary: res3a.macroSummary || res3b.macroSummary || '',
+      analyses: [...(res3a.analyses||[]), ...(res3b.analyses||[])]
+    };
     stepDone(3, Math.round((Date.now()-t3)/1000));
 
     // ── Render macro bar ──────────────────────────────────────────────
