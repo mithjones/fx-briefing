@@ -4,9 +4,6 @@
 [functions]
   node_bundler = "esbuild"
 
-[functions."claude"]
-  timeout = 120
-
 [[redirects]]
   from = "/api/claude"
   to = "/.netlify/functions/claude"
