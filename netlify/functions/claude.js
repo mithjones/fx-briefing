@@ -1,9 +1,5 @@
-// Netlify function timeout configuration
-exports.config = {
-  timeout: 120
-};
-
 exports.handler = async function(event, context) {
+  // Extend timeout as much as possible on free plan
   context.callbackWaitsForEmptyEventLoop = false;
 
   if (event.httpMethod === 'OPTIONS') {
@@ -25,7 +21,7 @@ exports.handler = async function(event, context) {
   try {
     const body = JSON.parse(event.body);
 
-    // Proxy calendar requests to JBlanked
+    // Proxy JBlanked calendar requests
     if (body._type === 'calendar') {
       const jbKey = body._jbKey;
       const resp = await fetch('https://www.jblanked.com/news/api/fxstreet/calendar/week/?impact=High', {
@@ -50,7 +46,7 @@ exports.handler = async function(event, context) {
       };
     }
 
-    // Proxy to Anthropic
+    // Proxy to Anthropic API
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     if (!anthropicKey) {
       return {
